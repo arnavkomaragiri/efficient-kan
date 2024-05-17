@@ -28,11 +28,40 @@ from functools import partial
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+class MLP(nn.Module):
+    def __init__(self, layer_sizes):
+        super(MLP, self).__init__()
+        self.layer_sizes = layer_sizes
+
+        # Create a list of layers
+        layers = []
+        for i in range(len(layer_sizes) - 1):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
+            if i < len(layer_sizes) - 2:  # Not the last layer
+                layers.append(nn.SiLU())
+
+        # Create the sequential model
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = x.view(-1, self.layer_sizes[0])  # Flatten the input
+        x = self.model(x)
+        return x
+
 def mnist_train(config: Dict, trainloader: DataLoader = None, valloader: DataLoader = None):
     # get model shape via list comprehension
     model_shape = [config['in_dim']] + [config['hidden_dim'] for _ in range(config['num_hidden'])] + [config['out_dim']]
     # initialize model and move to accelerator
-    model = KAN(model_shape)
+    match config['model']:
+        case 'mlp':
+            model = MLP(model_shape)
+        case 'kan':
+            model = KAN(model_shape)
+        case other:
+            raise ValueError(f"unrecognized model type: {other}")
+
+    print("Model:")
+    print(model)
     model.to(device)
 
     # optimizer initialization
@@ -114,7 +143,9 @@ if __name__ == "__main__":
     # define hparam search space
     search_space = {
         "use_adam": True,
-        "lr": tune.sample_from(lambda spec: 10 ** (-10 * np.random.rand())),
+        "model": "kan",
+        # "lr": tune.sample_from(lambda spec: 10 ** (-10 * np.random.rand())),
+        "lr": 0.001,
         "beta1": 0.9,
         "beta2": 0.99,
         "weight_decay": 1e-4,
