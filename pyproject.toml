@@ -1,24 +1,20 @@
-[project]
+[tool.poetry]
 name = "efficient-kan"
 version = "0.1.0"
-description = "An efficient pure-PyTorch implementation of Kolmogorov-Arnold Network (KAN)."
-authors = [
-    {name = "Blealtan Cao", email = "blealtan@outlook.com"},
-]
-dependencies = [
-    "torch>=2.3.0",
-    "pytest>=8.2.0",
-    "tqdm>=4.66.2",
-    "torchvision>=0.18.0",
-]
-requires-python = ">=3.8"
+description = ""
+authors = ["Arnav Komaragiri <komaraac@mail.uc.edu>"]
 readme = "README.md"
-license = {text = "MIT"}
+
+[tool.poetry.dependencies]
+python = "^3.11"
+torch = ">=2.3.0"
+pytest = ">=8.2.0"
+tqdm = ">=4.66.2"
+torchvision = ">=0.18.0"
+seaborn = "^0.13.2"
+ray = {extras = ["tune"], version = "^2.22.0"}
+
 
 [build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
-
-
-[tool.pdm]
-distribution = true
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
