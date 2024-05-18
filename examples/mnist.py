@@ -48,7 +48,37 @@ class MLP(nn.Module):
         x = self.model(x)
         return x
 
-def mnist_train(config: Dict, trainloader: DataLoader = None, valloader: DataLoader = None):
+# taken from https://discuss.pytorch.org/t/how-to-add-noise-to-mnist-dataset-when-using-pytorch/59745/2
+class AddGaussianNoise(object):
+    def __init__(self, mean=0., std=1.):
+        self.std = std
+        self.mean = mean
+        
+    def __call__(self, tensor):
+        return tensor + torch.randn(tensor.size()) * self.std + self.mean
+    
+    def __repr__(self):
+        return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
+
+def mnist_train(config: Dict):
+    train_transform = transforms.Compose([
+        transforms.ToTensor(), 
+        AddGaussianNoise(0, config['std']), 
+        transforms.Normalize((0.5,), (0.5,))
+    ])
+    val_transform = transforms.Compose([
+        transforms.ToTensor(), 
+        transforms.Normalize((0.5,), (0.5,))
+    ])
+    trainset = torchvision.datasets.MNIST(
+        root="./data", train=True, download=True, transform=train_transform
+    )
+    valset = torchvision.datasets.MNIST(
+        root="./data", train=False, download=True, transform=val_transform
+    )
+    trainloader = DataLoader(trainset, batch_size=config['batch_size'], shuffle=True)
+    valloader = DataLoader(valset, batch_size=config['batch_size'], shuffle=False)
+
     # get model shape via list comprehension
     model_shape = [config['in_dim']] + [config['hidden_dim'] for _ in range(config['num_hidden'])] + [config['out_dim']]
     # initialize model and move to accelerator
@@ -88,7 +118,7 @@ def mnist_train(config: Dict, trainloader: DataLoader = None, valloader: DataLoa
         # train loop
         with tqdm(trainloader) as pbar:
             for i, (images, labels) in enumerate(pbar):
-                images = images.view(-1, 28 * 28).to(device)
+                images = images.view(-1, config['in_dim']).to(device)
                 optimizer.zero_grad()
                 output = model(images)
                 loss = criterion(output, labels.to(device))
@@ -103,7 +133,7 @@ def mnist_train(config: Dict, trainloader: DataLoader = None, valloader: DataLoa
         val_accuracy = 0
         with torch.no_grad():
             for images, labels in valloader:
-                images = images.view(-1, 28 * 28).to(device)
+                images = images.view(-1, config['in_dim']).to(device)
                 output = model(images)
                 val_loss += criterion(output, labels.to(device)).item()
                 val_accuracy += (
@@ -127,38 +157,40 @@ def mnist_train(config: Dict, trainloader: DataLoader = None, valloader: DataLoa
 
 
 if __name__ == "__main__":
-    # Load MNIST
-    transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
-    )
-    trainset = torchvision.datasets.MNIST(
-        root="./data", train=True, download=True, transform=transform
-    )
-    valset = torchvision.datasets.MNIST(
-        root="./data", train=False, download=True, transform=transform
-    )
-    trainloader = DataLoader(trainset, batch_size=64, shuffle=True)
-    valloader = DataLoader(valset, batch_size=64, shuffle=False)
-
     # define hparam search space
     search_space = {
-        "use_adam": True,
-        "model": "kan",
-        # "lr": tune.sample_from(lambda spec: 10 ** (-10 * np.random.rand())),
+        # MODEL PARAMS
+        "model": "mlp",
+
+        # LR PARAMS
+        # "lr": tune.grid_search([10**(-i) for i in range(1, 7)]),
         "lr": 0.001,
+        "use_adam": True,
         "beta1": 0.9,
         "beta2": 0.99,
         "weight_decay": 1e-4,
+
+        # ARCHITECTURE PARAMS
         "in_dim": 28*28,
+        # "hidden_dim": tune.grid_search([2**i for i in range(4, 9)]),
         "hidden_dim": 64,
         "out_dim": 10,
+        # "num_hidden": tune.grid_search([i for i in range(1, 6)]),
         "num_hidden": 1,
-        "num_epochs": 10
+
+        # TRAINING PARAMS
+        "num_epochs": 10,
+        "batch_size": 64,
+
+        # DATA TRANSFORM PARAMS
+        "std": 0,
+        # "std": tune.grid_search([0.1 * i for i in range(1, 11)]),
     }
 
     # configure train function
-    train_func = partial(mnist_train, trainloader=trainloader, valloader=valloader)
-    if torch.cuda.is_available:
+    # train_func = tune.with_parameters(mnist_train, trainloader=trainloader, valloader=valloader)
+    train_func = mnist_train
+    if torch.cuda.is_available():
         train_func = tune.with_resources(train_func, {"gpu": 1})
 
     tuner = tune.Tuner(
